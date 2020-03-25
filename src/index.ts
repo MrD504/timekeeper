@@ -11,12 +11,28 @@ admin.initializeApp();
 const db = admin.firestore();
 
 export const myBot = functions.https.onRequest(async (req, res) => {
+  if (req.body.text === "help") {
+    const msg = `Commands:
+      join (add yourself to the database)\n
+      clock-in (clock in for the day)\n
+      clock-out (clock out for the day)\n
+      hours-today (see what hours you've worked today)\n
+      help`;
 
-  const data = JSON.stringify(req.body);
-  const dataBuffer = Buffer.from(data);
+    res.send({
+      "response_type": "ephemeral",
+      "text": msg
+    })
+  } else {
+    const dataBuffer = Buffer.from(JSON.stringify(req.body), 'utf8');
 
-  await pubsubClient.topic('manage-timesheet').publish(dataBuffer);
-  res.sendStatus(200);
+    res.send({
+      "response_type": "ephemeral",
+      "text": "Boop beep boop... processing"
+    })
+
+    await pubsubClient.topic('manage-timesheet').publish(dataBuffer);
+  }
 
   // when first setting up a function you must verify with slack by returning challenge
   // to prove you own it
@@ -27,13 +43,11 @@ export const myBot = functions.https.onRequest(async (req, res) => {
 
 export const manageTimesheet = functions.pubsub.topic('manage-timesheet')
   .onPublish(async (message, context) => {
-
-    const { event } = message.json;
-    const { user, channel, text } = event;
-    const userResult = await bot.users.profile.get({ user });
+    const request = JSON.parse(Buffer.from(message.data, 'base64').toString())
+    const { text, channel_id, user_id } = request;
+    const userResult = await bot.users.profile.get({user: user_id});
     const { email, display_name } = userResult.profile as any;
 
-    await handleMessageToUser(channel, `Processing request, I will tell you when I am finished`);
 
     if (text.indexOf("join") !== -1) {
       try {
@@ -41,9 +55,9 @@ export const manageTimesheet = functions.pubsub.topic('manage-timesheet')
         const userInfo = await getUser(email);
         if (userInfo.empty) {
           await createUser(email);
-          await handleMessageToUser(channel, `${display_name} has joined timekeeping`);
+          await handleMessageToUser(channel_id, user_id, `${display_name} has joined timekeeping`);
         } else {
-          await handleMessageToUser(channel, `${display_name} already exists in database`)
+          await handleMessageToUser(channel_id, user_id, `${display_name} already exists in database`)
         }
       } catch (err) {
         throw new functions.https.HttpsError('unknown', err.message, err);
@@ -54,13 +68,13 @@ export const manageTimesheet = functions.pubsub.topic('manage-timesheet')
       try {
         const userInfo = await getUser(email);
         if (userInfo.empty) {
-          await handleMessageToUser(channel, `${display_name} does not exist in database please type @timekeeper join`);
+          await handleMessageToUser(channel_id, user_id, `${display_name} does not exist in database please type @timekeeper join and then try to clock in again`);
           return;
         }
 
         userInfo.docs.forEach(async (item) => {
           const msg = await handleClockingIn(item.id);
-          await handleMessageToUser(channel, msg)
+          await handleMessageToUser(channel_id, user_id, msg)
         })
       } catch (err) {
         // const messageToUser =
@@ -72,13 +86,13 @@ export const manageTimesheet = functions.pubsub.topic('manage-timesheet')
       try {
         const userInfo = await getUser(email);
         if (userInfo.empty) {
-          await handleMessageToUser(channel, `${display_name} does not exist in database please type @timekeeper join`);
+          await handleMessageToUser(channel_id, user_id, `${display_name} does not exist in database please type @timekeeper join`);
           return;
         }
 
         userInfo.docs.forEach(async (item) => {
           const msg = await handleClockingOut(item.id);
-          await handleMessageToUser(channel, msg)
+          await handleMessageToUser(channel_id, user_id, msg)
         })
       } catch (err) {
         // const messageToUser =
@@ -91,17 +105,16 @@ export const manageTimesheet = functions.pubsub.topic('manage-timesheet')
       userInfo.docs.forEach(async (item) => {
         const matchingDate = await db.collection('datesWorked').where('userId', '==', item.id).where('date', '==', new Date().toDateString()).get();
         if (matchingDate.empty) {
-          await handleMessageToUser(channel, `${display_name} has been a lazy bum today`)
+          await handleMessageToUser(channel_id, user_id, `${display_name} has been a lazy bum today`)
         } else {
           matchingDate.docs.forEach(async (dayWorked) => {
             const data = dayWorked.data();
-            await handleMessageToUser(channel, `${display_name} ${data.date}, ${data.start} - ${data.end}`)
+            await handleMessageToUser(channel_id, user_id, `${display_name} ${data.date}, ${data.start} - ${data.end === '' ? "still working" : data.end}`)
           })
         }
       })
     }
-
-  });
+  })
 
 async function handleClockingIn(userId: string) {
 
@@ -148,8 +161,8 @@ async function createUser(email: string) {
   })
 }
 
-async function handleMessageToUser(channel: string, message: string) {
-  await bot.chat.postMessage({ channel: channel, text: message })
+async function handleMessageToUser(channel: string, user: string, message: string) {
+  await bot.chat.postEphemeral({ channel: channel, user: user, text: message })
   return;
 };
 
