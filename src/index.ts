@@ -32,7 +32,7 @@ export const myBot = functions.https.onRequest(async (req, res) => {
       })
       
       const dataBuffer = Buffer.from(JSON.stringify(req.body), 'utf8');
-      await pubsubClient.topic('manage-timesheet').publish(dataBuffer);
+      await pubsubClient.topic('manage-timesheet').publish(dataBuffer).catch((err:Error) => res.send(err))
 
     } catch (err) {
       console.error(err);
@@ -129,7 +129,7 @@ async function handleClockingIn(userId: string) {
     return responseMessage;
 
   } catch (err) {
-    throw new functions.https.HttpsError('unknown', err.message, err);
+    throw err;
   }
 };
 
@@ -153,7 +153,7 @@ async function handleClockingOut(userId: string) {
 
   } catch (err) {
     console.error(err);
-    throw new functions.https.HttpsError('unknown', err.message, err);
+    throw err;
   }
 };
 
@@ -162,7 +162,7 @@ async function getUser(email: string) {
     return db.collection('user').where('email', '==', email).get();
   } catch(err) {
     console.error(err);
-    throw new functions.https.HttpsError('unknown', err.message, err);
+    throw err;
   }
 };
 
@@ -173,7 +173,7 @@ async function createUser(email: string) {
     })
   } catch (err) {
     console.error(err);    console.error(err);
-    throw new functions.https.HttpsError('unknown', err.message, err);
+    throw err;
   }
 }
 
@@ -182,7 +182,7 @@ async function handleMessageToUser(channel: string, user: string, message: strin
     await bot.chat.postEphemeral({ channel: channel, user: user, text: message })
   } catch (err) {
     console.error(err);
-    throw new functions.https.HttpsError('unknown', err.message, err);
+    throw err;
   }
   return;
 };
@@ -201,7 +201,7 @@ async function handleCreateDate(userId: string) {
     }
   } catch(err) {
     console.error(err);
-    throw new functions.https.HttpsError('unknown', err.message, err);
+    throw err;
     return 'Oops';
   }
 };
@@ -221,6 +221,6 @@ async function addDateToCollection(userId: string): Promise<any> {
     return `Clocked in on ${workDate} at ${startTime}`;
   } catch (err) {
     console.error(err);
-    throw new functions.https.HttpsError('unknown', err.message, err);
+    throw err;
   }
 }
